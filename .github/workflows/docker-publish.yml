@@ -1,4 +1,4 @@
-name: Docker Build and Test
+name: Fastq Test
 
 on:
   schedule:
