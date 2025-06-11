@@ -1,6 +1,8 @@
-name: Fastq Test (DinD)
+name: Docker Build and Test
 
 on:
+  schedule:
+    - cron: '30 20 * * *'
   push:
     branches: [ "main" ]
     tags: [ 'v*.*.*' ]
@@ -12,73 +14,75 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-test:
-    # 使用DinD配置
-    runs-on: ubuntu-latest  # 必须用ubuntu-latest，docker运行器已弃用
-    container:
-      image: docker:24.0-dind  # 使用新版DinD镜像
-      options: --privileged --network=host
-
+  build-and-test:  # 合并构建和测试任务
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
       id-token: write
 
     steps:
-      # --- 初始化 ---
+      # --- 原有构建步骤保持不变 ---
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install cosign
         if: github.event_name != 'pull_request'
-        run: |
-          wget https://github.com/sigstore/cosign/releases/download/v2.2.4/cosign-linux-amd64
-          chmod +x cosign-linux-amd64
-          mv cosign-linux-amd64 /usr/local/bin/cosign
+        uses: sigstore/cosign-installer@v3.5.0
 
-      # --- 构建阶段 ---
-      - name: Login to GHCR
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.0.0
+
+      - name: Log into registry
         if: github.event_name != 'pull_request'
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} \
-            -u ${{ github.actor }} \
-            --password-stdin
+        uses: docker/login-action@v3.0.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5.0.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
       - name: Build and push
-        run: |
-          docker build \
-            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-            .
-          
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          fi
+        id: build-push
+        uses: docker/build-push-action@v5.0.0
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Sign image
         if: ${{ github.event_name != 'pull_request' }}
-        run: |
-          cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build-push.outputs.digest }}
+        run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
 
-      # --- 测试阶段 ---
+      # --- 新增测试步骤 ---
       - name: Download test data
+        if: success()  # 仅在构建成功后测试
         run: |
-          apk add --no-cache wget
           mkdir -p test_data
-          wget -O test_data/test_R1.fastq.gz https://zenodo.org/record/3736457/files/ERR011347_1.fastq.gz
-          wget -O test_data/test_R2.fastq.gz https://zenodo.org/record/3736457/files/ERR011347_2.fastq.gz
-
-      - name: Run test
+          wget -O test_data/test_R1.fastq.gz ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR011/ERR011347/ERR011347_1.fastq.gz
+          wget -O test_data/test_R2.fastq.gz ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR011/ERR011347/ERR011347_2.fastq.gz
+      - name: Run functional test
+        if: success()
         run: |
           mkdir -p output
+          # 使用刚构建的本地镜像（避免从仓库拉取）
           docker run --rm \
             -v $(pwd)/test_data:/mnt/in \
             -v $(pwd)/output:/mnt/out \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-
+            $(docker inspect --format='{{.Id}}' ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} | cut -d':' -f2)
       - name: Verify outputs
+        if: success()
         run: |
           test -f output/test_trimmed_R1.fastq.gz || (echo "Missing R1 output"; exit 1)
           test -f output/test_fastp.html || (echo "Missing HTML report"; exit 1)
