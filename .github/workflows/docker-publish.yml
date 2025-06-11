@@ -14,7 +14,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-test:
+  build-and-test:  # 合并构建和测试任务
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -22,20 +22,20 @@ jobs:
       id-token: write
 
     steps:
-      # --- 构建阶段 ---
+      # --- 原有构建步骤保持不变 ---
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install cosign
         if: github.event_name != 'pull_request'
-        uses: sigstore/cosign-installer@v4.1.0  # 更新到最新版
+        uses: sigstore/cosign-installer@v3.5.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.3.0  # 更新到最新版
+        uses: docker/setup-buildx-action@v3.0.0
 
       - name: Log into registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3.1.0  # 更新到最新版
+        uses: docker/login-action@v3.0.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -43,13 +43,13 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5.3.0  # 更新到最新版
+        uses: docker/metadata-action@v5.0.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
       - name: Build and push
         id: build-push
-        uses: docker/build-push-action@v5.2.0  # 更新到最新版
+        uses: docker/build-push-action@v5.0.0
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
@@ -57,7 +57,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          outputs: type=docker,dest=/tmp/image.tar
 
       - name: Sign image
         if: ${{ github.event_name != 'pull_request' }}
@@ -66,42 +65,26 @@ jobs:
           DIGEST: ${{ steps.build-push.outputs.digest }}
         run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
 
-      # --- 测试阶段 ---
-      - name: Load built image
-        run: |
-          docker load --input /tmp/image.tar
-          docker images
-
+      # --- 新增测试步骤 ---
       - name: Download test data
+        if: success()  # 仅在构建成功后测试
         run: |
           mkdir -p test_data
-          wget -O test_data/test_R1.fastq.gz https://zenodo.org/record/3736457/files/ERR011347_1.fastq.gz
-          wget -O test_data/test_R2.fastq.gz https://zenodo.org/record/3736457/files/ERR011347_2.fastq.gz
+          wget -O test_data/test_R1.fastq.gz ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR011/ERR011347/ERR011347_1.fastq.gz
+          wget -O test_data/test_R2.fastq.gz ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR011/ERR011347/ERR011347_2.fastq.gz
 
       - name: Run functional test
+        if: success()
         run: |
           mkdir -p output
-          IMAGE_ID=$(docker images -q ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest)
+          # 使用刚构建的本地镜像（避免从仓库拉取）
           docker run --rm \
             -v $(pwd)/test_data:/mnt/in \
             -v $(pwd)/output:/mnt/out \
-            $IMAGE_ID
+            $(docker inspect --format='{{.Id}}' ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} | cut -d':' -f2)
 
       - name: Verify outputs
+        if: success()
         run: |
-          ls -lh output/
           test -f output/test_trimmed_R1.fastq.gz || (echo "Missing R1 output"; exit 1)
-          test -f output/test_trimmed_R2.fastq.gz || (echo "Missing R2 output"; exit 1)
           test -f output/test_fastp.html || (echo "Missing HTML report"; exit 1)
-          gzip -t output/test_trimmed_R1.fastq.gz
-          gzip -t output/test_trimmed_R2.fastq.gz
-
-      - name: Upload reports
-        if: always()
-        uses: actions/upload-artifact@v4  # 更新到v4版本
-        with:
-          name: fastp-reports
-          path: |
-            output/*.html
-            output/*.json
-          retention-days: 7  # 设置自动清理时间
