@@ -1,8 +1,6 @@
 name: Fastq Test
 
 on:
-  schedule:
-    - cron: '30 20 * * *'
   push:
     branches: [ "main" ]
     tags: [ 'v*.*.*' ]
