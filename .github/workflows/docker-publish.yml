@@ -28,14 +28,14 @@ jobs:
 
       - name: Install cosign
         if: github.event_name != 'pull_request'
-        uses: sigstore/cosign-installer@v3.5.0
+        uses: sigstore/cosign-installer@v4.1.0  # 更新到最新版
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.0.0
+        uses: docker/setup-buildx-action@v3.3.0  # 更新到最新版
 
       - name: Log into registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3.0.0
+        uses: docker/login-action@v3.1.0  # 更新到最新版
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -43,13 +43,13 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5.0.0
+        uses: docker/metadata-action@v5.3.0  # 更新到最新版
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
       - name: Build and push
         id: build-push
-        uses: docker/build-push-action@v5.0.0
+        uses: docker/build-push-action@v5.2.0  # 更新到最新版
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
@@ -57,8 +57,14 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # 关键修改：显式导出镜像到本地
           outputs: type=docker,dest=/tmp/image.tar
+
+      - name: Sign image
+        if: ${{ github.event_name != 'pull_request' }}
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build-push.outputs.digest }}
+        run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
 
       # --- 测试阶段 ---
       - name: Load built image
@@ -75,7 +81,6 @@ jobs:
       - name: Run functional test
         run: |
           mkdir -p output
-          # 使用精确的镜像ID
           IMAGE_ID=$(docker images -q ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest)
           docker run --rm \
             -v $(pwd)/test_data:/mnt/in \
@@ -84,21 +89,19 @@ jobs:
 
       - name: Verify outputs
         run: |
-          # 检查输出文件
           ls -lh output/
           test -f output/test_trimmed_R1.fastq.gz || (echo "Missing R1 output"; exit 1)
           test -f output/test_trimmed_R2.fastq.gz || (echo "Missing R2 output"; exit 1)
           test -f output/test_fastp.html || (echo "Missing HTML report"; exit 1)
-          
-          # 验证文件完整性
           gzip -t output/test_trimmed_R1.fastq.gz
           gzip -t output/test_trimmed_R2.fastq.gz
 
       - name: Upload reports
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4  # 更新到v4版本
         with:
           name: fastp-reports
           path: |
             output/*.html
             output/*.json
+          retention-days: 7  # 设置自动清理时间
