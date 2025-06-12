@@ -1,20 +1,16 @@
 #!/bin/bash
 
-# 工作目录和输出目录
 INPUT_DIR="/mnt/in"
 OUTPUT_DIR="/mnt/out"
 THREAD_NUM=${THREADS:-4}
 
-# 检查输入目录是否存在
 if [ ! -d "$INPUT_DIR" ]; then
     echo -e "\e[0;31m错误：输入目录 $INPUT_DIR 不存在\e[0m" >&2
     exit 1
 fi
 
-# 创建输出目录
 mkdir -p "$OUTPUT_DIR"
 
-# 查找所有fastq.gz文件
 tmpfile=$(mktemp)
 find "$INPUT_DIR" -type f $ -name "*.fastq.gz" -o -name "*.fq.gz" $ > "$tmpfile"
 
@@ -24,7 +20,6 @@ if [ ! -s "$tmpfile" ]; then
     exit 1
 fi
 
-# 处理样本数据
 declare -A sample_map
 while IFS= read -r fqgz; do
     BASE_NAME=$(basename -- "$fqgz")
@@ -40,7 +35,6 @@ while IFS= read -r fqgz; do
 done < "$tmpfile"
 rm "$tmpfile"
 
-# 处理每个样本
 for sample_key in "${!sample_map[@]}"; do
     if [[ $sample_key =~ _R1$ ]]; then
         sample_name=${sample_key%_R1}
