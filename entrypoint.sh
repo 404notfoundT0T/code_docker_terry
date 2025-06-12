@@ -19,7 +19,7 @@ mkdir -p "$OUTPUT_DIR"
 
 # 查找所有fastq.gz文件
 tmpfile=$(mktemp)
-find "$INPUT_DIR" -type f $ -name "*.fastq.gz" -o -name "*.fq.gz" $ > "$tmpfile"
+find "$INPUT_DIR" -type f $ -name "*.fastq.gz" -o -name "*.fq.gz" > "$tmpfile"
 
 # 检查是否找到fastq.gz文件
 if [ ! -s "$tmpfile" ]; then
