@@ -1,8 +1,3 @@
-#!/bin/bash
-
-# lyx 8/20/2024
-# xing ZHAO 2025-05-28
-
 # 工作目录和输出目录
 INPUT_DIR="/mnt/in"
 OUTPUT_DIR="/mnt/out"
