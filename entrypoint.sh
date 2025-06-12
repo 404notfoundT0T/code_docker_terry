@@ -12,7 +12,7 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 tmpfile=$(mktemp)
-find "$INPUT_DIR" -type f $ -name "*.fastq.gz" -o -name "*.fq.gz" $ > "$tmpfile"
+find "$INPUT_DIR" -type f  -name "*.fastq.gz" -o -name "*.fq.gz" > "$tmpfile"
 
 if [ ! -s "$tmpfile" ]; then
     echo -e "\e[0;31m错误：在 $INPUT_DIR 中未找到.fastq.gz或.fq.gz文件\e[0m" >&2
