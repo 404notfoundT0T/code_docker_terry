@@ -76,11 +76,11 @@ jobs:
         if: success()
         run: |
           mkdir -p output
-          # 使用刚构建的本地镜像（避免从仓库拉取）
+              # 直接使用构建时生成的标签
           docker run --rm \
             -v $(pwd)/test_data:/mnt/in \
             -v $(pwd)/output:/mnt/out \
-            $(docker inspect --format='{{.Id}}' ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} | cut -d':' -f2)
+            ${{ steps.meta.outputs.tags }} 
       - name: Verify outputs
         if: success()
         run: |
